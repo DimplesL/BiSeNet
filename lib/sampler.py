@@ -1,4 +1,3 @@
-
 import math
 import torch
 from torch.utils.data.sampler import Sampler
@@ -42,7 +41,6 @@ class RepeatedDistSampler(Sampler):
         self.shuffle = shuffle
         self.ba = ba
 
-
     def __iter__(self):
         # deterministically shuffle based on epoch
         g = torch.Generator()
@@ -73,4 +71,3 @@ class RepeatedDistSampler(Sampler):
 
     def __len__(self):
         return self.num_imgs_rank
-

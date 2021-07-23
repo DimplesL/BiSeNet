@@ -2,6 +2,7 @@
 # -*- encoding: utf-8 -*-
 
 import sys
+
 sys.path.insert(0, '.')
 import os
 import os.path as osp
@@ -25,6 +26,7 @@ from lib.ohem_ce_loss import OhemCELoss
 from lib.lr_scheduler import WarmupPolyLrScheduler
 from lib.meters import TimeMeter, AvgMeter
 from lib.logger import setup_logger, print_log_msg
+from lib import config_factory
 
 # apex
 has_apex = True
@@ -33,42 +35,45 @@ try:
 except ImportError:
     has_apex = False
 
-
 ## fix all random seeds
 torch.manual_seed(123)
 torch.cuda.manual_seed(123)
 np.random.seed(123)
 random.seed(123)
 torch.backends.cudnn.deterministic = True
+
+
 #  torch.backends.cudnn.benchmark = True
 #  torch.multiprocessing.set_sharing_strategy('file_system')
 
 
-
-
 def parse_args():
     parse = argparse.ArgumentParser()
-    parse.add_argument('--local_rank', dest='local_rank', type=int, default=-1,)
-    parse.add_argument('--port', dest='port', type=int, default=44554,)
-    parse.add_argument('--config', dest='config', type=str,
-            default='configs/bisenetv2.py',)
-    parse.add_argument('--finetune-from', type=str, default=None,)
+    parse.add_argument('--local_rank', dest='local_rank', type=int, default=-1, )
+    parse.add_argument('--port', dest='port', type=int, default=44512, )
+    # parse.add_argument('--config', dest='config', type=str, default='configs/bisenetv2.py', )
+    parse.add_argument('--finetune-from', type=str, default=None, )
     return parse.parse_args()
 
+
 args = parse_args()
-cfg = set_cfg_from_file(args.config)
+# cfg = set_cfg_from_file(args.config)
+cfg = config_factory['cityscapes']
+cfg.WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
 
 
 def set_model():
-    net = model_factory[cfg.model_type](19)
+    net = model_factory[cfg.model_type](cfg.n_classes)
     if not args.finetune_from is None:
         net.load_state_dict(torch.load(args.finetune_from, map_location='cpu'))
-    if cfg.use_sync_bn: net = set_syncbn(net)
+    if cfg.use_sync_bn:
+        net = set_syncbn(net)
     net.cuda()
     net.train()
     criteria_pre = OhemCELoss(0.7)
     criteria_aux = [OhemCELoss(0.7) for _ in range(cfg.num_aux_heads)]
     return net, criteria_pre, criteria_aux
+
 
 def set_syncbn(net):
     if has_apex:
@@ -124,7 +129,7 @@ def set_meters():
     loss_meter = AvgMeter('loss')
     loss_pre_meter = AvgMeter('loss_prem')
     loss_aux_meters = [AvgMeter('loss_aux{}'.format(i))
-            for i in range(cfg.num_aux_heads)]
+                       for i in range(cfg.num_aux_heads)]
     return time_meter, loss_meter, loss_pre_meter, loss_aux_meters
 
 
@@ -154,8 +159,8 @@ def train():
 
     ## lr scheduler
     lr_schdr = WarmupPolyLrScheduler(optim, power=0.9,
-        max_iter=cfg.max_iter, warmup_iter=cfg.warmup_iters,
-        warmup_ratio=0.1, warmup='exp', last_epoch=-1,)
+                                     max_iter=cfg.max_iter, warmup_iter=cfg.warmup_iters,
+                                     warmup_ratio=0.1, warmup='exp', last_epoch=-1, )
 
     ## train loop
     for it, (im, lb) in enumerate(dl):
